@@ -140,8 +140,11 @@ researcher/
 - **公开默认 = MediaCrawler**（开源，git 子模块 `external/MediaCrawler`）。适配层 `platforms/mediacrawler.py`
   以子进程跑它的关键词搜索 → 读 JSON → 映射成统一 post。需 `uv sync` + Playwright Chromium +
   各平台首次扫码登录（登录态持久化复用）。安装见 `setup.ps1`/`setup.sh`。
-- **内部后端 = aigc-channel**（`platforms/aigc_channel.py`，公司内部接口，**已 .gitignore，不随公开 repo 发布**）。
-  本地存在时仍可用，并保留其独有平台（gzh/sph/toutiao/github）；与 MediaCrawler 重叠的平台由后者覆盖。
+- **内部后端**（均依赖公司内部接口，**已 .gitignore，不随公开 repo 发布**；本地存在时仍可用）：
+  - `platforms/aigc_channel.py`（`aigc-channel.aiddit.com`）：9 个中文平台，保留其独有的 gzh/sph/toutiao/github；与 MediaCrawler 重叠的平台由后者覆盖。
+  - `platforms/youtube.py` / `platforms/x.py`（`crawler.aiddit.com`）：YouTube / X。
+- 因此**公开 repo 实际可用平台 = MediaCrawler 的 7 个**（xhs/douyin/kuaishou/bili/weibo/zhihu/tieba）；
+  前端平台勾选项由 `/api/platforms` 动态生成，自动只显示已注册（即可用）的平台。
 
 **API Key**（项目根 `.env`，名见 `.env.example`）：`GEMINI_API_KEY`（当前唯一可用，默认）。
 `OPEN_ROUTER_API_KEY` / `QWEN_API_KEY` 实测已失效（401）。`DEEPGRAM_KEY` 仅转写增强用。

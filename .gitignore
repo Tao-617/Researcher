@@ -4,7 +4,11 @@
 !.env.example
 
 # ── 公司内部后端（不可开源；本地保留运行，公开 repo 不带）──
+# 均依赖内部接口（aigc-channel.aiddit.com / crawler.aiddit.com），公开环境不可用。
+# _backends.py 容错加载，缺失自动跳过；公开 repo 只保留可用的 MediaCrawler 7 平台。
 platforms/aigc_channel.py
+platforms/youtube.py
+platforms/x.py
 
 # ── Python ───────────────────────────────────────────────
 __pycache__/
