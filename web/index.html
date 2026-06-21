@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>媒体内容采集 · researcher</title>
+<style>
+  :root{
+    --ink:#24211d; --muted:#6f6961; --line:#ded8ce; --paper:#fbfaf7; --panel:#fff;
+    --mint:#1f8a70; --rose:#b24b63; --amber:#b87918; --cyan:#2a6f8f; --blue:#2563eb;
+    --soft-mint:#e9f5f0; --soft-rose:#f8e9ee; --soft-amber:#fff2d9; --soft-cyan:#e7f2f7;
+    --shadow:0 18px 45px rgba(41,35,28,.08);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);background:var(--paper);line-height:1.55;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  header{padding:26px 24px 16px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#fff 0%,#fbfaf7 100%)}
+  .wrap{max-width:1480px;margin:0 auto}
+  .eyebrow{color:var(--mint);font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  h1{margin:6px 0 4px;font-size:clamp(22px,3vw,32px);line-height:1.1}
+  .lede{color:var(--muted);font-size:14px}
+
+  .app{max-width:1480px;margin:0 auto;padding:22px 24px;display:grid;
+    grid-template-columns:340px 1fr;gap:22px;align-items:start}
+  @media(max-width:1024px){.app{grid-template-columns:1fr}}
+
+  /* ── sidebar / controls ── */
+  .side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;
+    box-shadow:var(--shadow);position:sticky;top:22px;max-height:calc(100vh - 44px);overflow-y:auto}
+  .side h3{margin:0 0 14px;font-size:15px;font-weight:800;border-bottom:1px solid var(--line);padding-bottom:10px}
+  label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:14px 0 5px}
+  textarea,input,select{width:100%;background:#fff;border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:8px 10px;font:inherit}
+  textarea{resize:vertical;min-height:54px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:5px 11px;border:1.5px solid var(--line);border-radius:20px;cursor:pointer;
+    color:var(--muted);user-select:none;font-size:12.5px;background:#fff;transition:.12s}
+  .chip:hover{border-color:#c0c0c0;color:var(--ink)}
+  .chip.on{background:var(--mint);border-color:var(--mint);color:#fff;font-weight:600}
+  .switch{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+  .switch span{color:var(--ink);font-size:13px;font-weight:600}
+  .switch input{width:auto}
+  .frow{display:grid;grid-template-columns:1fr 96px 1fr 26px;gap:5px;margin-bottom:6px}
+  .frow input,.frow select{padding:6px 7px;font-size:12px}
+  .mini{background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:6px;
+    cursor:pointer;padding:5px 9px;font-size:12px}
+  .mini:hover{color:var(--ink);border-color:var(--mint)}
+  .wt{display:flex;gap:8px;align-items:center;margin:7px 0}
+  .wt span{width:54px;color:var(--muted);font-size:12px}
+  .wt input[type=range]{flex:1}
+  .wt b{width:34px;text-align:right;font-size:13px}
+  .runbtn{width:100%;margin-top:18px;padding:11px;background:var(--mint);border:none;color:#fff;
+    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
+  .runbtn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* ── console ── */
+  .console{background:#181512;color:#dcd3c3;border:1px solid #3d352e;border-radius:12px;padding:14px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;box-shadow:var(--shadow);
+    display:none;flex-direction:column;height:230px;margin-bottom:18px}
+  .console.show{display:flex}
+  .console-head{display:flex;justify-content:space-between;border-bottom:1px solid #3d352e;
+    padding-bottom:7px;margin-bottom:7px;font-size:12px;color:#a3968d}
+  .console pre{flex:1;margin:0;overflow-y:auto;white-space:pre-wrap;word-break:break-all;
+    font-size:12.5px;line-height:1.45;color:#e5d8c5}
+
+  /* ── stats ── */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 14px;box-shadow:var(--shadow)}
+  .stat b{display:block;font-size:24px;line-height:1.1}
+  .stat span{color:var(--muted);font-size:12.5px}
+
+  /* ── toolbar ── */
+  .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:16px}
+  .fbtns{display:flex;gap:7px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;
+    padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;transition:.15s}
+  .btn:hover{background:#f5f2ec}
+  .btn.active{color:#fff;background:var(--ink);border-color:var(--ink)}
+
+  /* ── grid ── */
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+  @media(max-width:1280px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}}
+  .result{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    box-shadow:var(--shadow);display:flex;flex-direction:column;position:relative;cursor:pointer;
+    transition:transform .2s,box-shadow .2s,border-color .25s}
+  .result:hover{transform:translateY(-2px);box-shadow:0 22px 50px rgba(41,35,28,.12)}
+  .result.discard{border-color:rgba(178,75,99,.18)}
+  .result.top{border-color:rgba(31,138,112,.5)}
+  .discard-overlay{position:absolute;inset:0;background:rgba(251,250,247,.86);
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;
+    text-align:center;z-index:5;transition:opacity .25s;pointer-events:none}
+  .result.discard:hover .discard-overlay{opacity:0}
+  .discard-badge{background:var(--soft-rose);color:var(--rose);border:1px solid rgba(178,75,99,.25);
+    padding:5px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.5px;margin-bottom:10px}
+  .discard-reason{color:var(--muted);font-size:13px;line-height:1.6;max-width:90%}
+  .rankbadge{position:absolute;top:10px;left:10px;z-index:4;width:30px;height:30px;line-height:30px;
+    text-align:center;background:var(--mint);color:#fff;border-radius:50%;font-weight:800;font-size:14px;
+    box-shadow:0 2px 8px rgba(31,138,112,.4)}
+  .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;height:132px;background:#eee7dc;overflow:hidden}
+  .thumbs img{width:100%;height:100%;object-fit:cover;display:block;background:#eee7dc}
+  .thumbs img:first-child:nth-last-child(1){grid-column:1/-1}
+  .thumbs img:first-child:nth-last-child(2),.thumbs img:first-child:nth-last-child(2)~img{grid-column:span 1}
+  .body{padding:14px;flex:1;display:flex;flex-direction:column}
+  .meta{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-bottom:7px}
+  .platform{color:#fff;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap}
+  .p-xhs{background:var(--rose)}.p-gzh{background:var(--mint)}.p-zhihu{background:var(--cyan)}
+  .p-x{background:var(--cyan)}.p-bili{background:#e06d93}.p-douyin{background:#24211d}
+  .p-sph{background:#07c160}.p-youtube{background:#c4302b}.p-github{background:#24292e}
+  .p-toutiao{background:#f04142}.p-weibo{background:#e6162d}
+  .result h2{margin:0 0 7px;font-size:16px;line-height:1.3}
+  .excerpt{color:var(--muted);font-size:13px;margin-bottom:9px;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .tag{background:#f2eee7;border-radius:999px;padding:2px 9px;font-size:11.5px;color:#514a42}
+  .tag.q{background:#e0f2fe;color:#0369a1}
+  .scorebar{margin-top:auto}
+  .overall{display:flex;align-items:end;justify-content:space-between;border-top:1px solid var(--line);padding-top:9px}
+  .decision{font-weight:800;color:var(--mint)}
+  .decision.cand{color:var(--amber)}.decision.drop{color:var(--rose)}
+  .score{font-size:30px;line-height:.9;font-weight:800;color:var(--blue)}
+  .metricline{display:flex;gap:12px;color:var(--muted);font-size:12px;margin:6px 0}
+
+  /* ── dialog ── */
+  dialog{width:min(1000px,calc(100vw - 28px));max-height:calc(100vh - 32px);
+    border:1px solid var(--line);border-radius:12px;padding:0;box-shadow:0 28px 90px rgba(0,0,0,.25)}
+  dialog::backdrop{background:rgba(38,33,27,.42)}
+  .modal-head{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:16px;
+    z-index:2;display:flex;justify-content:space-between;gap:14px;align-items:start}
+  .modal-head h3{margin:6px 0 0;font-size:20px;line-height:1.25}
+  .modal-content{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;padding:16px}
+  .modal-content>section,.modal-content>aside{min-width:0}
+  .section-title{margin:16px 0 8px;font-weight:800;font-size:14px}
+  .section-title:first-child{margin-top:0}
+  .rubric-note{background:var(--soft-cyan);border-left:4px solid var(--cyan);padding:10px 12px;
+    color:#254c5d;border-radius:4px;font-size:13px}
+  .rubric-note.drop{background:var(--soft-rose);border-left-color:var(--rose);color:#7a2f42}
+  .raw{white-space:pre-wrap;background:#faf7f1;border:1px solid var(--line);border-radius:8px;
+    padding:12px;max-height:340px;overflow:auto;color:#3d3831;font-size:13px}
+  .images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .images img{width:100%;max-height:260px;object-fit:contain;border:1px solid var(--line);
+    border-radius:8px;background:#f1ece4;cursor:zoom-in}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}
+  .kv .k{color:var(--muted)}
+  .sc-row{display:grid;grid-template-columns:64px 1fr 38px;gap:10px;align-items:center;font-size:13px;margin:8px 0}
+  .bar{height:8px;background:#eee7dc;border-radius:999px;overflow:hidden}
+  .bar span{display:block;height:100%;background:var(--blue);width:0}
+  .sc-row .v{text-align:right;font-weight:700}
+  .cmts{display:flex;flex-direction:column;gap:7px}
+  .cmt{background:#faf7f1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;color:#514a42}
+  .empty{color:var(--muted);text-align:center;padding:60px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Content Discovery · researcher</div>
+    <h1>媒体内容采集工具</h1>
+    <p class="lede">输入采集需求 → 多平台发现 → 配置化筛选 → LLM 去重排序 → 浏览每一条原帖</p>
+  </div>
+</header>
+
+<main class="app">
+  <!-- 控制台 -->
+  <aside class="side">
+    <h3>采集设置</h3>
+    <label>采集 prompt（自然语言）</label>
+    <textarea id="query" placeholder="例：找 AI 健身/增肌内容选题参考">AI 健身 增肌 计划</textarea>
+
+    <label>采集需求（评估锚点，可留空）</label>
+    <textarea id="req" placeholder="例：竞品分析，找可参考的增肌内容选题"></textarea>
+
+    <label>平台</label>
+    <div class="chips" id="platforms"></div>
+
+    <div class="switch">
+      <span>LLM 扩展关键词</span>
+      <input type="checkbox" id="expand" checked>
+    </div>
+
+    <label>每平台 / 关键词 返回上限</label>
+    <input type="number" id="maxcount" value="20" min="1" max="100">
+
+    <label>筛选规则（全过才保留）</label>
+    <div id="filters"></div>
+    <button class="mini" onclick="addFilter()">+ 加规则</button>
+
+    <label style="margin-top:16px">排序权重</label>
+    <div class="wt"><span>相关性</span><input type="range" id="w_rel" min="0" max="1" step="0.05" value="0.5"><b id="w_rel_v">0.5</b></div>
+    <div class="wt"><span>质量</span><input type="range" id="w_qual" min="0" max="1" step="0.05" value="0.3"><b id="w_qual_v">0.3</b></div>
+    <div class="wt"><span>热度</span><input type="range" id="w_eng" min="0" max="1" step="0.05" value="0.2"><b id="w_eng_v">0.2</b></div>
+
+    <label>Top N</label>
+    <input type="number" id="topn" value="5" min="1" max="20">
+
+    <div class="switch">
+      <span>LLM 精排（Top-K 复核纠偏）</span>
+      <input type="checkbox" id="rerank" checked>
+    </div>
+
+    <button class="runbtn" id="runBtn" onclick="run()">⚡ 开始采集</button>
+  </aside>
+
+  <!-- 结果区 -->
+  <div style="min-width:0">
+    <section class="console" id="console">
+      <div class="console-head"><span id="consoleTitle">采集控制台</span><span id="consoleStatus">idle</span></div>
+      <pre id="consoleOut"></pre>
+    </section>
+
+    <div id="results">
+      <div class="empty">填好左侧设置，点「开始采集」。搜到的原帖会在这里逐条展示，点卡片看原文详情。</div>
+    </div>
+  </div>
+</main>
+
+<!-- 详情弹窗 -->
+<dialog id="detail">
+  <div class="modal-head">
+    <div>
+      <div class="meta" id="dMeta"></div>
+      <h3 id="dTitle"></h3>
+    </div>
+    <div style="display:flex;gap:8px">
+      <a id="dLink" class="btn" target="_blank" rel="noreferrer">🌐 源链接</a>
+      <button class="btn" onclick="document.getElementById('detail').close()">关闭</button>
+    </div>
+  </div>
+  <div class="modal-content">
+    <section>
+      <div class="rubric-note" id="dReason"></div>
+      <div class="section-title">帖子原文</div>
+      <div class="raw" id="dText"></div>
+      <div class="section-title">图片（<span id="dImgN">0</span>）</div>
+      <div class="images" id="dImages"></div>
+      <div class="section-title">评论（<span id="dCmtN">0</span>）</div>
+      <div class="cmts" id="dCmts"></div>
+    </section>
+    <aside>
+      <div class="section-title">评分</div>
+      <div id="dScores"></div>
+      <div class="section-title">作者 / 互动</div>
+      <div class="kv" id="dKv"></div>
+      <div class="section-title">命中 query</div>
+      <div class="tags" id="dQueries"></div>
+      <div class="section-title" id="dDedupTitle" style="display:none">去重</div>
+      <div id="dDedup" class="kv"></div>
+    </aside>
+  </div>
+</dialog>
+
+<script>
+const OPS=["gte","lte","eq","within_days","min_len","max_len","contains_any","not_contains_any","regex","nonempty"];
+const PLATC={xhs:"小红书",gzh:"公众号",zhihu:"知乎",x:"X",bili:"B站",douyin:"抖音",sph:"视频号",youtube:"YouTube",github:"GitHub",toutiao:"头条",weibo:"微博"};
+const STAGEC={top:"精选",candidate:"候选",filtered:"已过滤",deduped:"已去重"};
+const NOIMG="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='280'%3E%3Crect width='400' height='280' fill='%23eee7dc'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236f6961' font-size='20'%3E无图%3C/text%3E%3C/svg%3E";
+
+let RESULT=null;
+let st={channel:"all",stage:"all",sort:"score"};
+let pollTimer=null;
+
+function esc(s){return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function pname(id){return PLATC[id]||id;}
+
+async function boot(){
+  const plats=await (await fetch("/api/platforms")).json();
+  const cfg=await (await fetch("/api/config")).json();
+  const sel=new Set(cfg.platforms||["xhs"]);
+  document.getElementById("platforms").innerHTML=plats.map(p=>
+    `<span class="chip ${sel.has(p.id)?'on':''}" data-id="${p.id}" onclick="this.classList.toggle('on')">${esc(p.name||pname(p.id))}</span>`).join("");
+  (cfg.filters||[]).forEach(f=>addFilter(f));
+  if(cfg.max_count_per_query) document.getElementById("maxcount").value=cfg.max_count_per_query;
+  const r=(cfg.rank&&cfg.rank.weights)||{};
+  if(r.relevance!=null) setW("w_rel",r.relevance);
+  if(r.quality!=null) setW("w_qual",r.quality);
+  if(r.engagement!=null) setW("w_eng",r.engagement);
+  if(cfg.rank&&cfg.rank.top_n) document.getElementById("topn").value=cfg.rank.top_n;
+  if(cfg.rank&&cfg.rank.rerank===false) document.getElementById("rerank").checked=false;
+
+  // 支持 ?run_id=xxx 直接回看历史结果（不必重跑）
+  const rid=new URLSearchParams(location.search).get("run_id");
+  if(rid){
+    const r=await fetch("/api/result?run_id="+encodeURIComponent(rid));
+    if(r.ok){RESULT=await r.json();render();}
+  }
+}
+function setW(id,v){document.getElementById(id).value=v;document.getElementById(id+"_v").textContent=v;}
+document.addEventListener("input",e=>{
+  if(["w_rel","w_qual","w_eng"].includes(e.target.id))
+    document.getElementById(e.target.id+"_v").textContent=e.target.value;
+});
+
+function addFilter(f){
+  f=f||{field:"post.like_count",op:"gte",value:50};
+  const div=document.createElement("div");div.className="frow";
+  const val=Array.isArray(f.value)?f.value.join(","):f.value;
+  div.innerHTML=`<input class="ff" value="${esc(f.field)}" placeholder="post.like_count">
+    <select class="fo">${OPS.map(o=>`<option ${o===f.op?'selected':''}>${o}</option>`).join("")}</select>
+    <input class="fv" value="${esc(val??'')}" placeholder="值">
+    <button class="mini" onclick="this.parentNode.remove()">×</button>`;
+  document.getElementById("filters").appendChild(div);
+}
+function collectFilters(){
+  return [...document.querySelectorAll(".frow")].map(r=>{
+    const field=r.querySelector(".ff").value.trim();
+    const op=r.querySelector(".fo").value;
+    let v=r.querySelector(".fv").value.trim();
+    if(["contains_any","not_contains_any"].includes(op)) v=v.split(",").map(s=>s.trim()).filter(Boolean);
+    else if(!["regex","nonempty"].includes(op)&&v!==""&&!isNaN(v)) v=Number(v);
+    return {field,op,value:v};
+  }).filter(r=>r.field);
+}
+
+async function run(){
+  const query=document.getElementById("query").value.trim();
+  if(!query){alert("prompt 不能为空");return;}
+  const platforms=[...document.querySelectorAll("#platforms .chip.on")].map(c=>c.dataset.id);
+  if(!platforms.length){alert("至少选一个平台");return;}
+  const body={
+    query, requirement:document.getElementById("req").value.trim(),
+    platforms, expand_query:document.getElementById("expand").checked,
+    max_count_per_query:+document.getElementById("maxcount").value,
+    filters:collectFilters(),
+    weights:{relevance:+w_rel.value,quality:+w_qual.value,engagement:+w_eng.value},
+    top_n:+document.getElementById("topn").value,
+    rerank:document.getElementById("rerank").checked,
+  };
+  document.getElementById("runBtn").disabled=true;
+  document.getElementById("results").innerHTML='<div class="empty">采集中…</div>';
+  const con=document.getElementById("console");con.classList.add("show");
+  document.getElementById("consoleStatus").textContent="running";
+  const {run_id}=await (await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+  clearInterval(pollTimer);
+  pollTimer=setInterval(()=>poll(run_id),1500);
+}
+
+async function poll(rid){
+  const s=await (await fetch("/api/log?run_id="+rid)).json();
+  const out=document.getElementById("consoleOut");
+  out.textContent=s.log; out.scrollTop=out.scrollHeight;
+  if(s.status==="success"||s.status==="failed"){
+    clearInterval(pollTimer);
+    document.getElementById("runBtn").disabled=false;
+    document.getElementById("consoleStatus").textContent=s.status;
+    if(s.status==="success"){
+      RESULT=await (await fetch("/api/result?run_id="+rid)).json();
+      st={channel:"all",stage:"all",sort:"score"};
+      render();
+    }else{
+      document.getElementById("results").innerHTML='<div class="empty">❌ 采集失败，见上方控制台日志</div>';
+    }
+  }
+}
+
+function render(){
+  if(!RESULT){return;}
+  const stt=RESULT.stats||{}, posts=RESULT.posts||[];
+  const statsHtml=[["搜到",stt.searched],["筛选后",stt.after_filter],["去重后",stt.after_dedup],
+    ["Top",stt.top_n],["成本","$"+(RESULT.cost||0)]]
+    .map(([k,v])=>`<div class="stat"><b>${v??'-'}</b><span>${k}</span></div>`).join("");
+
+  // 平台过滤按钮
+  const plats=[...new Set(posts.map(p=>p.platform))];
+  let pf=`<button class="btn ${st.channel==='all'?'active':''}" onclick="setF('channel','all')">全部平台 (${posts.length})</button>`;
+  plats.forEach(p=>{const n=posts.filter(x=>x.platform===p).length;
+    pf+=`<button class="btn ${st.channel===p?'active':''}" onclick="setF('channel','${p}')">${esc(pname(p))} (${n})</button>`;});
+  // 阶段过滤按钮
+  const sc=k=>posts.filter(p=>p.stage===k).length;
+  let sf="";
+  [["all","全部",posts.length],["top","精选",sc("top")],["candidate","候选",sc("candidate")],
+   ["dropped","已淘汰",sc("filtered")+sc("deduped")]].forEach(([k,lbl,n])=>{
+    sf+=`<button class="btn ${st.stage===k?'active':''}" onclick="setF('stage','${k}')">${lbl} (${n})</button>`;});
+
+  const toolbar=`<div class="toolbar">
+    <div class="fbtns">${pf}</div>
+    <div class="fbtns">${sf}
+      <select onchange="setF('sort',this.value)" style="min-width:140px">
+        <option value="score" ${st.sort==='score'?'selected':''}>按综合分排序</option>
+        <option value="like" ${st.sort==='like'?'selected':''}>按点赞排序</option>
+        <option value="platform" ${st.sort==='platform'?'selected':''}>按平台排序</option>
+      </select>
+    </div></div>`;
+
+  let list=posts.slice();
+  if(st.channel!=="all") list=list.filter(p=>p.platform===st.channel);
+  if(st.stage==="dropped") list=list.filter(p=>p.stage==="filtered"||p.stage==="deduped");
+  else if(st.stage!=="all") list=list.filter(p=>p.stage===st.stage);
+  if(st.sort==="score") list.sort((a,b)=>((b.scores&&b.scores.final)||0)-((a.scores&&a.scores.final)||0));
+  else if(st.sort==="like") list.sort((a,b)=>((b.metrics&&b.metrics.like)||0)-((a.metrics&&a.metrics.like)||0));
+  else if(st.sort==="platform") list.sort((a,b)=>(a.platform||"").localeCompare(b.platform||""));
+
+  const cards=list.length?`<div class="grid">${list.map(card).join("")}</div>`
+    :`<div class="empty">无符合条件的帖子</div>`;
+  document.getElementById("results").innerHTML=
+    `<div class="stats">${statsHtml}</div>${toolbar}${cards}`;
+}
+function setF(k,v){st[k]=v;render();}
+
+function card(p){
+  const drop=(p.stage==="filtered"||p.stage==="deduped");
+  const sc=p.scores||{};
+  const finalStr=sc.final!=null?Math.round(sc.final*100):'—';
+  const imgs=(p.images||[]).slice(0,3);
+  const thumbs=imgs.length?`<div class="thumbs">${imgs.map(u=>
+    `<img src="${esc(u)}" referrerpolicy="no-referrer" onerror="this.src='${NOIMG}'">`).join("")}</div>`:"";
+  const overlay=drop?`<div class="discard-overlay">
+    <div class="discard-badge">${STAGEC[p.stage]}</div>
+    <div class="discard-reason">${esc(p.drop_reason||"")}</div></div>`:"";
+  const rankb=p.stage==="top"&&p.rank?`<div class="rankbadge">${p.rank}</div>`:"";
+  const m=p.metrics||{};
+  const decCls=p.stage==="top"?"":(p.stage==="candidate"?"cand":"drop");
+  const qtags=(p.found_by_queries||[]).slice(0,3).map(q=>`<span class="tag q">${esc(q)}</span>`).join("");
+  return `<div class="result ${drop?'discard':''} ${p.stage==='top'?'top':''}" onclick="showDetail('${esc(p.case_id)}')">
+    ${overlay}${rankb}${thumbs}
+    <div class="body">
+      <div class="meta"><span class="platform p-${esc(p.platform)}">${esc(pname(p.platform))}</span>
+        <span>${esc(p.publish_time||"")}</span></div>
+      <h2>${esc(p.title||"")}</h2>
+      <div class="excerpt">${esc(p.body_text||"")}</div>
+      <div class="metricline"><span>👍 ${m.like??'-'}</span><span>💬 ${m.comment??'-'}</span><span>⭐ ${m.collect??'-'}</span></div>
+      <div class="tags">${qtags}</div>
+      <div class="scorebar"><div class="overall">
+        <span class="decision ${decCls}">${STAGEC[p.stage]}</span>
+        <span class="score">${finalStr}</span>
+      </div></div>
+    </div></div>`;
+}
+
+function scoreRow(label,v,max){
+  const has=v!=null;
+  const pct=has?Math.max(0,Math.min(100,(v/max)*100)):0;
+  const vs=has?(Number.isInteger(v)?v:(+v).toFixed(2)):'-';
+  return `<div class="sc-row"><span>${label}</span>
+    <div class="bar"><span style="width:${pct}%"></span></div>
+    <span class="v">${vs}</span></div>`;
+}
+
+function showDetail(cid){
+  const p=(RESULT.posts||[]).find(x=>x.case_id===cid);
+  if(!p)return;
+  document.getElementById("dMeta").innerHTML=
+    `<span class="platform p-${esc(p.platform)}">${esc(pname(p.platform))}</span>
+     <span>${esc(p.publish_time||"")}</span>
+     <span style="margin-left:auto;font-family:monospace">${esc(p.case_id)} · ${STAGEC[p.stage]}</span>`;
+  document.getElementById("dTitle").textContent=p.title||"";
+  const link=document.getElementById("dLink");
+  if(p.source_url){link.href=p.source_url;link.style.display="";}else{link.style.display="none";}
+
+  const note=document.getElementById("dReason");
+  if(p.drop_reason){note.className="rubric-note drop";note.textContent="被淘汰："+p.drop_reason;}
+  else if(p.reason){note.className="rubric-note";note.textContent="推荐理由："+p.reason;}
+  else{note.className="rubric-note";note.textContent="（未进入评分阶段）";}
+
+  document.getElementById("dText").textContent=p.body_text||"（无正文）";
+
+  const imgs=p.images||[];
+  document.getElementById("dImgN").textContent=imgs.length;
+  document.getElementById("dImages").innerHTML=imgs.length
+    ?imgs.map(u=>`<img src="${esc(u)}" referrerpolicy="no-referrer" onclick="window.open(this.src)" onerror="this.src='${NOIMG}'">`).join("")
+    :`<div style="grid-column:1/-1;color:var(--muted);font-size:13px">无图片</div>`;
+
+  const cmts=p.comments||[];
+  document.getElementById("dCmtN").textContent=cmts.length;
+  document.getElementById("dCmts").innerHTML=cmts.length
+    ?cmts.map(c=>`<div class="cmt">${esc(c)}</div>`).join("")
+    :`<div style="color:var(--muted);font-size:13px">无评论</div>`;
+
+  const sc=p.scores;
+  document.getElementById("dScores").innerHTML=sc
+    ?scoreRow("相关性",sc.relevance,10)+scoreRow("质量",sc.quality,10)
+      +scoreRow("热度",sc.engagement,1)+scoreRow("综合",sc.final,1)
+    :`<div style="color:var(--muted);font-size:13px">该帖未被评分（在筛选/去重阶段被淘汰）</div>`;
+
+  const a=p.author||{},m=p.metrics||{};
+  document.getElementById("dKv").innerHTML=
+    `<span class="k">作者</span><span>${esc(a.name||'-')}</span>
+     <span class="k">粉丝</span><span>${a.follower_count??'-'}</span>
+     <span class="k">点赞</span><span>${m.like??'-'}</span>
+     <span class="k">评论</span><span>${m.comment??'-'}</span>
+     <span class="k">收藏</span><span>${m.collect??'-'}</span>
+     <span class="k">分享</span><span>${m.share??'-'}</span>`;
+
+  document.getElementById("dQueries").innerHTML=
+    (p.found_by_queries||[]).map(q=>`<span class="tag q">${esc(q)}</span>`).join("")||
+    `<span style="color:var(--muted);font-size:13px">-</span>`;
+
+  const dd=p.dedup||{},merged=dd.merged_from||[];
+  const ddT=document.getElementById("dDedupTitle"),ddB=document.getElementById("dDedup");
+  if(merged.length){ddT.style.display="";ddB.style.display="";
+    ddB.innerHTML=`<span class="k">合并了</span><span>${merged.length} 条同选题：${merged.map(esc).join("、")}</span>`;}
+  else{ddT.style.display="none";ddB.style.display="none";ddB.innerHTML="";}
+
+  document.getElementById("detail").showModal();
+}
+
+boot();
+</script>
+</body>
+</html>

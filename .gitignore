@@ -1,0 +1,31 @@
+# ── 密钥 / 环境（绝不提交）────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── 公司内部后端（不可开源；本地保留运行，公开 repo 不带）──
+platforms/aigc_channel.py
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.Python
+
+# ── 管线运行输出（每次 run 生成，不入库）──────────────────
+runs/*
+!runs/.gitkeep
+
+# ── 编辑器 / 系统 ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

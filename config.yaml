@@ -1,0 +1,28 @@
+# researcher 采集模块默认配置（运营可改 / 前端可覆盖）
+
+platforms: [xhs]              # 采哪些平台，逗号在 CLI 用 --platforms 覆盖
+max_count_per_query: 20       # 每个 (平台,关键词) 返回上限
+
+expand_query: true            # 是否用 LLM 把 prompt 扩展成多关键词
+expand_count: 8
+
+eval_model: gemini-flash-lite # 评估/排序模型（见 llm/providers.py MODELS）
+eval_concurrent: 3            # LLM 评分并发（Gemini 端高并发会掐连接，建议 ≤3）
+
+# 硬筛选规则（顺序执行，全过才保留）。算子见 pipeline/filters.py
+filters:
+  - field: post.body_text
+    op: min_len
+    value: 10                 # 滤掉空壳/纯标题
+  - field: post.like_count
+    op: gte
+    value: 50                 # 赞 >= 50
+
+rank:
+  top_n: 5
+  weights:                    # 三者加权成 final_score（会各自归一）
+    relevance: 0.5
+    quality: 0.3
+    engagement: 0.2
+  rerank: true                # 加权粗排后，再让 LLM 对候选池做一次点对点精排（纠偏 + 推荐理由）
+  rerank_pool: 8              # 送 LLM 精排的候选数（略大于 top_n 才能"提拔"被加权低估者）；关 rerank 时忽略
