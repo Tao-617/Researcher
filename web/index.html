@@ -42,8 +42,9 @@
   .switch{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
   .switch span{color:var(--ink);font-size:13px;font-weight:600}
   .switch input{width:auto}
-  .frow{display:grid;grid-template-columns:1fr 96px 1fr 26px;gap:5px;margin-bottom:6px}
+  .frow{display:grid;grid-template-columns:1fr 116px 1fr 26px;gap:5px;margin-bottom:9px}
   .frow input,.frow select{padding:6px 7px;font-size:12px}
+  .fhint{grid-column:1/-1;font-size:11px;color:var(--muted);margin-top:1px;line-height:1.4}
   .mini{background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:6px;
     cursor:pointer;padding:5px 9px;font-size:12px}
   .mini:hover{color:var(--ink);border-color:var(--mint)}
@@ -267,7 +268,33 @@
 </dialog>
 
 <script>
-const OPS=["gte","lte","eq","within_days","min_len","max_len","contains_any","not_contains_any","regex","nonempty"];
+// 可筛字段（点号路径取 source 值）：中文名 + 类型 + 说明
+const FIELDS=[
+  {v:"post.like_count",    t:"num",  label:"点赞数",    hint:"帖子点赞数量"},
+  {v:"post.comment_count", t:"num",  label:"评论数",    hint:"帖子评论数量"},
+  {v:"post.collect_count", t:"num",  label:"收藏数",    hint:"帖子收藏数量（部分平台无）"},
+  {v:"post.share_count",   t:"num",  label:"分享数",    hint:"帖子转发/分享数量（部分平台无）"},
+  {v:"post.body_text",     t:"str",  label:"正文",      hint:"帖子正文/文案文本"},
+  {v:"post.title",         t:"str",  label:"标题",      hint:"帖子标题"},
+  {v:"post.content_type",  t:"str",  label:"内容类型",  hint:"如 视频 / 图文"},
+  {v:"post.publish_time",  t:"time", label:"发布时间",  hint:"配合「最近N天内」筛新鲜内容"},
+  {v:"found_by_queries",   t:"list", label:"命中关键词",hint:"命中的搜索关键词列表"},
+];
+// 算子定义：中文名 + 适用字段类型 + 值输入方式 + 占位提示
+const OP_DEF={
+  gte:             {label:"≥ 大于等于",   types:["num"],                   val:"num",  ph:"如 50"},
+  lte:             {label:"≤ 小于等于",   types:["num"],                   val:"num",  ph:"如 1000"},
+  eq:              {label:"= 等于",        types:["num","str"],            val:"text", ph:"值"},
+  within_days:     {label:"最近 N 天内",   types:["time"],                 val:"num",  ph:"如 30"},
+  min_len:         {label:"长度 ≥",        types:["str","list"],           val:"num",  ph:"如 10"},
+  max_len:         {label:"长度 ≤",        types:["str","list"],           val:"num",  ph:"如 500"},
+  contains_any:    {label:"包含任一词",     types:["str"],                  val:"text", ph:"逗号分隔，如 教程,干货"},
+  not_contains_any:{label:"不含任何词",     types:["str"],                  val:"text", ph:"逗号分隔，如 广告,微商"},
+  regex:           {label:"正则匹配",       types:["str"],                  val:"text", ph:"正则表达式"},
+  nonempty:        {label:"非空",           types:["num","str","list","time"],val:"none",ph:""},
+};
+function fieldDef(v){return FIELDS.find(f=>f.v===v)||{v,t:"str",label:v,hint:""};}
+function opsForType(t){return Object.keys(OP_DEF).filter(o=>OP_DEF[o].types.includes(t));}
 const PLATC={xhs:"小红书",gzh:"公众号",zhihu:"知乎",x:"X",bili:"B站",douyin:"抖音",sph:"视频号",youtube:"YouTube",github:"GitHub",toutiao:"头条",weibo:"微博",kuaishou:"快手",tieba:"贴吧"};
 const STAGEC={top:"精选",candidate:"候选",filtered:"已过滤",deduped:"已去重"};
 const NOIMG="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='280'%3E%3Crect width='400' height='280' fill='%23eee7dc'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236f6961' font-size='20'%3E无图%3C/text%3E%3C/svg%3E";
@@ -310,12 +337,37 @@ document.addEventListener("input",e=>{
 function addFilter(f){
   f=f||{field:"post.like_count",op:"gte",value:50};
   const div=document.createElement("div");div.className="frow";
-  const val=Array.isArray(f.value)?f.value.join(","):f.value;
-  div.innerHTML=`<input class="ff" value="${esc(f.field)}" placeholder="post.like_count">
-    <select class="fo">${OPS.map(o=>`<option ${o===f.op?'selected':''}>${o}</option>`).join("")}</select>
-    <input class="fv" value="${esc(val??'')}" placeholder="值">
-    <button class="mini" onclick="this.parentNode.remove()">×</button>`;
+  const val=Array.isArray(f.value)?f.value.join(","):(f.value??"");
+  div.innerHTML=`
+    <select class="ff" onchange="onFieldChange(this)">
+      ${FIELDS.map(fd=>`<option value="${fd.v}" ${fd.v===f.field?'selected':''}>${fd.label}</option>`).join("")}
+    </select>
+    <select class="fo" onchange="updateHint(this.closest('.frow'))"></select>
+    <input class="fv" value="${esc(val)}">
+    <button class="mini" onclick="this.parentNode.remove()">×</button>
+    <div class="fhint"></div>`;
   document.getElementById("filters").appendChild(div);
+  fillOps(div, fieldDef(f.field).t, f.op);   // 按字段类型填算子，保留传入 op（若适用）
+  updateHint(div);
+}
+function fillOps(row,type,selected){
+  const fo=row.querySelector(".fo");
+  const ops=opsForType(type);
+  fo.innerHTML=ops.map(o=>`<option value="${o}" ${o===selected?'selected':''}>${OP_DEF[o].label}</option>`).join("");
+  if(!ops.includes(selected)) fo.value=ops[0];
+}
+function onFieldChange(sel){
+  const row=sel.closest(".frow");
+  fillOps(row, fieldDef(sel.value).t);       // 换字段→重算可用算子
+  updateHint(row);
+}
+function updateHint(row){
+  const fd=fieldDef(row.querySelector(".ff").value);
+  const op=row.querySelector(".fo").value, od=OP_DEF[op]||{};
+  const fv=row.querySelector(".fv");
+  if(od.val==="none"){fv.style.display="none";fv.value="";}
+  else{fv.style.display="";fv.placeholder=od.ph||"值";}
+  row.querySelector(".fhint").textContent=`${fd.hint}　·　${od.label||op}`;
 }
 function collectFilters(){
   return [...document.querySelectorAll(".frow")].map(r=>{
