@@ -112,6 +112,19 @@
   .p-sph{background:#07c160}.p-youtube{background:#c4302b}.p-github{background:#24292e}
   .p-toutiao{background:#f04142}.p-weibo{background:#e6162d}
   .p-kuaishou{background:#ff7a22}.p-tieba{background:#4e9bff}
+  /* 账号聚合视图 */
+  .acc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+  .acc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .acc-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .acc-name{font-size:16px}
+  .acc-stats{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin-bottom:9px}
+  .acc-stats b{color:var(--ink);font-size:15px}
+  .acc-q{margin-bottom:6px}
+  .acc-post{display:flex;align-items:center;gap:7px;padding:5px 0;border-top:1px dashed var(--line);cursor:pointer;font-size:13px}
+  .acc-post:hover .acc-pt{color:var(--rose)}
+  .acc-pt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acc-pl{color:var(--muted);font-size:12px}
+  .rankbadge.sm{position:static;width:18px;height:18px;font-size:11px;line-height:18px;flex:none}
   .result h2{margin:0 0 7px;font-size:16px;line-height:1.3}
   .excerpt{color:var(--muted);font-size:13px;margin-bottom:9px;
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -260,7 +273,7 @@ const STAGEC={top:"精选",candidate:"候选",filtered:"已过滤",deduped:"已�
 const NOIMG="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='280'%3E%3Crect width='400' height='280' fill='%23eee7dc'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236f6961' font-size='20'%3E无图%3C/text%3E%3C/svg%3E";
 
 let RESULT=null;
-let st={channel:"all",stage:"all",sort:"score"};
+let st={channel:"all",stage:"all",sort:"score",view:"posts"};
 let pollTimer=null;
 
 function esc(s){return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
@@ -348,7 +361,7 @@ async function poll(rid){
     document.getElementById("consoleStatus").textContent=s.status;
     if(s.status==="success"){
       RESULT=await (await fetch("/api/result?run_id="+rid)).json();
-      st={channel:"all",stage:"all",sort:"score"};
+      st={channel:"all",stage:"all",sort:"score",view:"posts"};
       render();
     }else{
       document.getElementById("results").innerHTML='<div class="empty">❌ 采集失败，见上方控制台日志</div>';
@@ -359,9 +372,22 @@ async function poll(rid){
 function render(){
   if(!RESULT){return;}
   const stt=RESULT.stats||{}, posts=RESULT.posts||[];
+  const accounts=RESULT.accounts||[];
   const statsHtml=[["搜到",stt.searched],["筛选后",stt.after_filter],["去重后",stt.after_dedup],
-    ["Top",stt.top_n],["成本","$"+(RESULT.cost||0)]]
+    ["Top",stt.top_n],["账号",accounts.length],["成本","$"+(RESULT.cost||0)]]
     .map(([k,v])=>`<div class="stat"><b>${v??'-'}</b><span>${k}</span></div>`).join("");
+
+  // 视图切换：内容 / 账号
+  const viewSwitch=`<div class="toolbar"><div class="fbtns">
+    <button class="btn ${st.view!=='accounts'?'active':''}" onclick="setF('view','posts')">内容 (${posts.length})</button>
+    <button class="btn ${st.view==='accounts'?'active':''}" onclick="setF('view','accounts')">账号 (${accounts.length})</button>
+  </div></div>`;
+
+  if(st.view==='accounts'){
+    document.getElementById("results").innerHTML=
+      `<div class="stats">${statsHtml}</div>${viewSwitch}${renderAccounts(accounts)}`;
+    return;
+  }
 
   // 平台过滤按钮
   const plats=[...new Set(posts.map(p=>p.platform))];
@@ -396,9 +422,37 @@ function render(){
   const cards=list.length?`<div class="grid">${list.map(card).join("")}</div>`
     :`<div class="empty">无符合条件的帖子</div>`;
   document.getElementById("results").innerHTML=
-    `<div class="stats">${statsHtml}</div>${toolbar}${cards}`;
+    `<div class="stats">${statsHtml}</div>${viewSwitch}${toolbar}${cards}`;
 }
 function setF(k,v){st[k]=v;render();}
+
+function renderAccounts(accs){
+  if(!accs.length) return `<div class="empty">无账号数据（作者字段为空）</div>`;
+  return `<div class="acc-grid">${accs.map(accCard).join("")}</div>`;
+}
+function accCard(a){
+  const av=a.avg_score!=null?Math.round(a.avg_score*100):'—';
+  const posts=(a.posts||[]).slice(0,5).map(p=>
+    `<div class="acc-post" onclick="showDetail('${esc(p.case_id)}')">
+       ${p.is_top&&p.rank?`<span class="rankbadge sm">${p.rank}</span>`:''}
+       <span class="acc-pt">${esc(p.title||'')}</span><span class="acc-pl">👍 ${p.like}</span>
+     </div>`).join("");
+  return `<div class="acc">
+    <div class="acc-h">
+      <span class="platform p-${esc(a.platform)}">${esc(pname(a.platform))}</span>
+      <b class="acc-name">${esc(a.author_name||'')}</b>
+    </div>
+    <div class="acc-stats">
+      <span><b>${a.post_count}</b> 篇</span>
+      <span><b>${a.top_count}</b> 进Top</span>
+      <span><b>${av}</b> 均分</span>
+      <span>👍 ${a.engagement_sum}</span>
+      <span>粉丝 ${a.follower_count??'-'}</span>
+    </div>
+    <div class="acc-q tags">${(a.queries||[]).slice(0,4).map(q=>`<span class="tag q">${esc(q)}</span>`).join("")}</div>
+    <div class="acc-posts">${posts}</div>
+  </div>`;
+}
 
 function card(p){
   const drop=(p.stage==="filtered"||p.stage==="deduped");

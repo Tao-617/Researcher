@@ -93,7 +93,9 @@ async def run_pipeline(
     top, c = await rank_top(kept, requirement, llm_call, model_id, weights, top_n,
                             max_concurrent=int(config.get("eval_concurrent", 3)),
                             rerank=rank_cfg.get("rerank", True),
-                            rerank_pool=int(rank_cfg.get("rerank_pool", top_n + 3)))
+                            rerank_pool=int(rank_cfg.get("rerank_pool", top_n + 3)),
+                            multimodal=bool(config.get("eval_multimodal", False)),
+                            max_images=int(config.get("eval_max_images", 3)))
     total_cost += c
 
     # 6. 标准化输出

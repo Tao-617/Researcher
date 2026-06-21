@@ -8,6 +8,10 @@ expand_count: 8
 
 eval_model: gemini-flash-lite # 评估/排序模型（见 llm/providers.py MODELS）
 eval_concurrent: 3            # LLM 评分并发（Gemini 端高并发会掐连接，建议 ≤3）
+eval_multimodal: true         # 评分时把封面/图片一并发给 LLM，让它"看"视觉内容（视频取封面帧）；失败自动回退纯文本
+eval_max_images: 3            # 每条最多发几张图给 LLM（控成本/延迟）
+
+aggregate_by_author: true     # 额外产出"候选账号"聚合视图（按 user_id 归并同作者内容）
 
 # 硬筛选规则（顺序执行，全过才保留）。算子见 pipeline/filters.py
 filters:

@@ -40,30 +40,67 @@ def _validate_score(data: dict) -> Optional[str]:
     return None
 
 
+def _post_images(post: Dict[str, Any], max_images: int) -> List[str]:
+    """取前 max_images 张可用图片 URL（视频帖这里就是封面帧）。"""
+    out = []
+    for u in (post.get("images") or []):
+        if isinstance(u, str) and u.startswith("http"):
+            out.append(u)
+        if len(out) >= max_images:
+            break
+    return out
+
+
 async def _score_one(
     source: Dict[str, Any], requirement: str,
     llm_call: Callable, model: str, sem: asyncio.Semaphore,
+    multimodal: bool = False, max_images: int = 3,
 ) -> Tuple[Dict[str, Any], float]:
-    """评一条，返回 (scores, cost)。失败给 0 分并标 error。"""
+    """评一条，返回 (scores, cost)。失败给 0 分并标 error。
+
+    multimodal=True 且该帖有图时，把封面/图片一并发给 LLM（让它"看"视觉内容——
+    视频帖发的是封面帧）。多模态调用失败时自动回退纯文本重评，不让视频/图文帖丢分。
+    """
+    post = source.get("post", {}) or {}
+    is_video = bool(post.get("videos"))
+    imgs = _post_images(post, max_images) if multimodal else []
+
     system = (
         "你是内容运营的选题评审。针对运营的采集需求，判断单条内容的两点："
         "relevance=与需求的相关程度，quality=作为选题参考的内容质量（信息量/可操作性/清晰度）。"
+        "若附了图片（视频帖为其封面帧），请结合画面质量/信息量综合判断 quality。"
         "各 0-10。只输出 JSON：{\"relevance\":n,\"quality\":n,\"reason\":\"一句话理由\"}"
     )
-    user = (
+    kind = "视频" if is_video else "图文"
+    user_text = (
         f"【采集需求】\n{requirement}\n\n"
         f"【平台】{source.get('platform')}　【命中关键词】{source.get('found_by_queries')}\n"
-        f"【内容】\n{_post_brief(source.get('post', {}) or {})}\n\n"
-        "只输出 JSON。"
+        f"【内容{'｜' + kind + '，下附' + ('封面帧' if is_video else '图片') if imgs else ''}】\n"
+        f"{_post_brief(post)}\n\n只输出 JSON。"
     )
-    async with sem:
-        data, cost = await call_llm_with_retry(
-            llm_call=llm_call,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
-            model=model, temperature=0.1, max_tokens=400,
-            validate_fn=_validate_score, task_name="Score",
-        )
+
+    async def _call(with_imgs: bool) -> Tuple[Optional[dict], float]:
+        if with_imgs and imgs:
+            content: Any = [{"type": "text", "text": user_text}] + \
+                [{"type": "image_url", "image_url": {"url": u}} for u in imgs]
+        else:
+            content = user_text
+        async with sem:
+            return await call_llm_with_retry(
+                llm_call=llm_call,
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": content}],
+                model=model, temperature=0.1, max_tokens=400,
+                validate_fn=_validate_score, task_name="Score",
+            )
+
+    data, cost = await _call(with_imgs=bool(imgs))
+    if not data and imgs:                     # 多模态失败（如图片防盗链拉取失败）→ 回退纯文本
+        logger.info("多模态评分失败，回退纯文本：%s", source.get("case_id"))
+        data2, cost2 = await _call(with_imgs=False)
+        cost += cost2
+        data = data2 or data
+
     if not data:
         return {"relevance": 0, "quality": 0, "reason": "评估失败", "_error": True}, cost
     return {"relevance": float(data["relevance"]), "quality": float(data["quality"]),
@@ -144,6 +181,7 @@ async def rank_top(
     weights: Dict[str, float], top_n: int = 5,
     max_concurrent: int = 4,
     rerank: bool = True, rerank_pool: Optional[int] = None,
+    multimodal: bool = False, max_images: int = 3,
 ) -> Tuple[List[Dict[str, Any]], float]:
     """评分 + 加权排序 + LLM 精排，返回 (ranked_sources_top_n, total_cost)。
 
@@ -155,9 +193,11 @@ async def rank_top(
         return [], 0.0
 
     sem = asyncio.Semaphore(max_concurrent)
-    print(f"🧠 LLM 评分 {len(sources)} 条 (并发 {max_concurrent}) ...")
+    mm = " +多模态" if multimodal else ""
+    print(f"🧠 LLM 评分 {len(sources)} 条 (并发 {max_concurrent}{mm}) ...")
     results = await asyncio.gather(*[
-        _score_one(s, requirement, llm_call, model, sem) for s in sources
+        _score_one(s, requirement, llm_call, model, sem, multimodal, max_images)
+        for s in sources
     ])
 
     total_cost = sum(c for _, c in results)

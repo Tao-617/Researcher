@@ -6,6 +6,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from pipeline.aggregate import aggregate_by_author
+
 
 def _first(post: Dict[str, Any], keys: List[str]) -> Optional[Any]:
     for k in keys:
@@ -173,6 +175,9 @@ def build_result(
                               p["rank"] if p.get("rank") else 999,
                               -((p.get("scores") or {}).get("final") or 0)))
 
+    accounts = (aggregate_by_author(all_sources, top_ids)
+                if config.get("aggregate_by_author", True) else [])
+
     return {
         "query": query,
         "requirement": requirement,
@@ -184,5 +189,6 @@ def build_result(
         "stats": stats,
         "top": [_item(s) for s in top],
         "posts": posts,
+        "accounts": accounts,
         "dropped": dropped_filter + dropped_dedup,
     }

@@ -261,9 +261,16 @@ async def search(
             proc = await loop.run_in_executor(None, _run_blocking, cmd, home, timeout)
 
         if proc.returncode != 0:
-            tail = (proc.stdout or "")[-800:]
+            out = proc.stdout or ""
+            low = out.lower()
+            hint = ""
+            if "go-login-btn" in out or "扫码" in out or ("login" in low and "timeout" in low):
+                hint = f"（{platform_id} 可能未登录：每个平台需先单独扫码登录一次，见 README「登录」一节）"
+            elif "err_connection_reset" in low or "connecterror" in low or "net::err" in low:
+                hint = f"（{platform_id} 连接被重置/不通：可能被平台风控，或需配置代理）"
+            tail = out[-500:]
             return ToolResult(title="搜索失败", output="",
-                              error=f"MediaCrawler 退出码 {proc.returncode}: {tail}")
+                              error=f"MediaCrawler 退出码 {proc.returncode} {hint}: ...{tail}")
 
         records = _read_contents(code, out_dir)
         posts: List[Dict[str, Any]] = []

@@ -114,6 +114,11 @@ PYTHONIOENCODING=utf-8 python -m pipeline.run \
 | `MEDIACRAWLER_GET_COMMENT` | `0` | 是否同时抓一级评论（开了更慢，但能补全评论/作者） |
 | `MEDIACRAWLER_LOGIN_TYPE` | `qrcode` | `qrcode` / `phone` / `cookie` |
 | `MEDIACRAWLER_TIMEOUT` | `300` | 单次搜索子进程超时秒数 |
+| `RESEARCHER_ENABLE_INTERNAL` | 空 | 仅内部：=1 时额外加载内部后端，公开环境留空 |
+
+> **每个平台都要各自登录一次**（不是登录一个就全通）。某些平台（尤其抖音）反爬较强，可能出现
+> `ERR_CONNECTION_RESET`/登录超时——属平台风控，非本项目问题，建议先从小红书/B站/知乎等验证。
+> 视频内容的评估目前基于**封面帧 + 文案**（不下载视频做逐帧/字幕理解）。
 
 ---
 
@@ -129,6 +134,8 @@ PYTHONIOENCODING=utf-8 python -m pipeline.run \
 | `filters` | 硬筛选规则列表（算子见 `pipeline/filters.py`） |
 | `rank.top_n` / `rank.weights` | 取前几 + 相关性/质量/热度权重 |
 | `rank.rerank` / `rank.rerank_pool` | 加权粗排后再让 LLM 做 Top-K 精排纠偏；CLI `--no-rerank` 关 |
+| `eval_multimodal` / `eval_max_images` | 评分时把**封面/图片发给 LLM**判断视觉（视频取封面帧）；失败自动回退纯文本 |
+| `aggregate_by_author` | 额外产出**「候选账号」聚合视图**（按 `user_id` 归并同作者内容，前端有「账号」标签页） |
 
 ---
 
