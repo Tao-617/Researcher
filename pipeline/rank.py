@@ -13,14 +13,26 @@
 """
 
 import asyncio
+import base64
 import json
 import logging
 import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import httpx
+
 from llm.llm_helper import call_llm_with_retry
 
 logger = logging.getLogger(__name__)
+
+# 各平台图片防盗链需要的 Referer（否则 CDN 返回 403/被拒）。
+_IMG_REFERER = {
+    "xhs": "https://www.xiaohongshu.com", "bili": "https://www.bilibili.com",
+    "douyin": "https://www.douyin.com", "kuaishou": "https://www.kuaishou.com",
+    "weibo": "https://weibo.com", "zhihu": "https://www.zhihu.com",
+}
+_IMG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+_IMG_MAX_BYTES = 4_000_000  # 单图上限，避免超大图撑爆请求
 
 
 def _post_brief(post: Dict[str, Any], max_body: int = 600) -> str:
@@ -51,6 +63,33 @@ def _post_images(post: Dict[str, Any], max_images: int) -> List[str]:
     return out
 
 
+async def _fetch_data_url(client: httpx.AsyncClient, url: str, platform: str) -> Optional[str]:
+    """自己带 Referer 抓图 → base64 data URL（绕开防盗链；Gemini 无需再去抓远端 URL）。"""
+    headers = {"User-Agent": _IMG_UA}
+    ref = _IMG_REFERER.get(platform)
+    if ref:
+        headers["Referer"] = ref
+    try:
+        r = await client.get(url, headers=headers)
+        r.raise_for_status()
+        if len(r.content) > _IMG_MAX_BYTES:
+            return None
+        ct = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+        if not ct.startswith("image/"):
+            ct = "image/jpeg"
+        return f"data:{ct};base64," + base64.b64encode(r.content).decode()
+    except Exception:
+        return None
+
+
+async def _images_as_data_urls(urls: List[str], platform: str) -> List[str]:
+    if not urls:
+        return []
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        results = await asyncio.gather(*[_fetch_data_url(client, u, platform) for u in urls])
+    return [d for d in results if d]
+
+
 async def _score_one(
     source: Dict[str, Any], requirement: str,
     llm_call: Callable, model: str, sem: asyncio.Semaphore,
@@ -63,7 +102,9 @@ async def _score_one(
     """
     post = source.get("post", {}) or {}
     is_video = bool(post.get("videos"))
-    imgs = _post_images(post, max_images) if multimodal else []
+    # 自抓图转 base64（带 Referer 绕防盗链）。抓不到就当无图，走纯文本。
+    imgs = (await _images_as_data_urls(_post_images(post, max_images), source.get("platform", ""))
+            if multimodal else [])
 
     system = (
         "你是内容运营的选题评审。针对运营的采集需求，判断单条内容的两点："
