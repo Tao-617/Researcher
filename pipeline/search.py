@@ -23,7 +23,7 @@ def _post_cid(post: Dict[str, Any]) -> Optional[str]:
 
 
 async def _search_one(pdef, keyword: str, max_count: int, sem: asyncio.Semaphore):
-    """跑一次搜索，返回 (platform_id, keyword, posts)。任何异常降级为空结果。"""
+    """单关键词搜索，返回 [(platform_id, keyword, posts)]。任何异常降级为空结果。"""
     async with sem:
         try:
             result = await pdef.search_impl(
@@ -32,12 +32,46 @@ async def _search_one(pdef, keyword: str, max_count: int, sem: asyncio.Semaphore
             )
         except Exception as e:
             logger.warning("search 失败 [%s/%s]: %s", pdef.id, keyword, e)
-            return pdef.id, keyword, []
+            print(f"   ❌ [{pdef.id}/{keyword}] 失败：{e}")
+            return [(pdef.id, keyword, [])]
     if getattr(result, "error", None):
         logger.warning("search 返回错误 [%s/%s]: %s", pdef.id, keyword, result.error)
-        return pdef.id, keyword, []
+        print(f"   ❌ [{pdef.id}/{keyword}] {str(result.error)[:120]}")
+        return [(pdef.id, keyword, [])]
     posts = (result.metadata or {}).get("posts", []) or []
-    return pdef.id, keyword, posts
+    print(f"   ✅ [{pdef.id}/{keyword}] 搜到 {len(posts)} 条")
+    return [(pdef.id, keyword, posts)]
+
+
+async def _search_batch(pdef, queries: List[str], max_count: int, sem: asyncio.Semaphore):
+    """批量搜索：多关键词一次调用（只开一次浏览器），按 source_keyword 归因。
+
+    返回 [(platform_id, keyword, posts), ...]。失败降级为空。
+    """
+    async with sem:
+        try:
+            result = await pdef.search_batch_impl(
+                platform_id=pdef.id, keywords=queries, max_count=max_count, extras=None,
+            )
+        except Exception as e:
+            logger.warning("batch search 失败 [%s]: %s", pdef.id, e)
+            print(f"   ❌ [{pdef.id}] 批量搜索失败：{e}")
+            return [(pdef.id, queries[0], [])]
+    if getattr(result, "error", None):
+        logger.warning("batch search 返回错误 [%s]: %s", pdef.id, result.error)
+        print(f"   ❌ [{pdef.id}] {str(result.error)[:120]}")
+        return [(pdef.id, queries[0], [])]
+
+    posts = (result.metadata or {}).get("posts", []) or []
+    qset = set(queries)
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for post in posts:
+        sk = post.get("source_keyword")
+        kw = sk if sk in qset else queries[0]   # 归因到具体关键词，兜底首词
+        grouped.setdefault(kw, []).append(post)
+    brief = "，".join(f"{k}:{len(v)}" for k, v in grouped.items()) or "0"
+    print(f"   ✅ [{pdef.id}] 批量 {len(queries)} 词一次搜完，共 {len(posts)} 条（{brief}）")
+    return [(pdef.id, kw, plist) for kw, plist in grouped.items()] or [(pdef.id, queries[0], [])]
 
 
 async def search_all(
@@ -61,9 +95,15 @@ async def search_all(
         pdefs.append(pdef)
 
     sem = asyncio.Semaphore(max_concurrent)
-    tasks = [_search_one(pdef, q, max_count, sem) for pdef in pdefs for q in queries]
-    print(f"🔎 搜索 {len(pdefs)} 平台 × {len(queries)} 关键词 = {len(tasks)} 次请求 (并发 {max_concurrent})")
-    results = await asyncio.gather(*tasks)
+    tasks = []
+    for pdef in pdefs:
+        if getattr(pdef, "search_batch_impl", None):
+            tasks.append(_search_batch(pdef, queries, max_count, sem))  # 多词一次浏览器
+        else:
+            tasks.extend(_search_one(pdef, q, max_count, sem) for q in queries)
+    print(f"🔎 搜索 {len(pdefs)} 平台 × {len(queries)} 关键词 = {len(tasks)} 次浏览器调用 (并发 {max_concurrent})")
+    nested = await asyncio.gather(*tasks)
+    results = [tup for group in nested for tup in group]   # 展平
 
     collected: Dict[tuple, Dict[str, Any]] = {}
     per_query: Dict[str, int] = {}

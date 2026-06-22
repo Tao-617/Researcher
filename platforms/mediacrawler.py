@@ -161,6 +161,7 @@ def _map_post(code: str, rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "videos": videos,
         "content_type": "video" if videos else "图文",
         "author_comments": [],          # 评论稍后按 id 回填
+        "source_keyword": rec.get("source_keyword"),  # 命中它的关键词（批量搜索时用于归因）
         "_raw": rec,                    # 保留原始记录，便于排查
     }
 
@@ -212,14 +213,12 @@ def _run_blocking(cmd: List[str], home: Path, timeout: int) -> subprocess.Comple
     )
 
 
-async def search(
-    platform_id: str,
-    keyword: str,
-    max_count: int = 20,
-    cursor: str = "",
-    extras: Optional[Dict[str, Any]] = None,
-) -> ToolResult:
-    """跑一次 MediaCrawler 关键词搜索，返回与 aigc_channel.search 同构的 ToolResult。"""
+async def _crawl(platform_id: str, keywords_csv: str, max_count: int) -> ToolResult:
+    """核心：跑一次 MediaCrawler（关键词可逗号分隔→一个浏览器跑完多个词），返回 posts。
+
+    一次子进程 = 一次浏览器启动。批量传多个关键词能把"开浏览器次数"从 N(关键词) 降到 1。
+    每条结果带 source_keyword，调用方据此还原是哪个词命中的。
+    """
     code = _PLATFORM_CODE.get(platform_id)
     if not code:
         return ToolResult(title="搜索失败", output="", error=f"MediaCrawler 不支持平台 {platform_id}")
@@ -230,7 +229,6 @@ async def search(
             title="搜索失败", output="",
             error=f"未找到 MediaCrawler（{home}）。请 clone 并 `uv sync`，或设环境变量 MEDIACRAWLER_HOME。",
         )
-
     uv = shutil.which("uv")
     if not uv:
         return ToolResult(title="搜索失败", output="", error="未找到 uv，可执行 `pip install uv` 或装 uv。")
@@ -238,17 +236,18 @@ async def search(
     get_comment = _bool_env("MEDIACRAWLER_GET_COMMENT", False)
     headless = _bool_env("MEDIACRAWLER_HEADLESS", False)
     login_type = os.getenv("MEDIACRAWLER_LOGIN_TYPE", "qrcode")
-    timeout = int(os.getenv("MEDIACRAWLER_TIMEOUT", "300"))
+    # 超时：批量时一次会话要跑完所有关键词，按关键词数自动放大（封顶 30 分钟）。
+    # 显式设 MEDIACRAWLER_TIMEOUT 则用固定值。
+    n_kw = keywords_csv.count(",") + 1
+    env_t = os.getenv("MEDIACRAWLER_TIMEOUT")
+    timeout = int(env_t) if env_t else min(180 * n_kw, 1800)
 
     out_dir = Path(tempfile.mkdtemp(prefix=f"mc_{code}_"))
     cmd = [
         uv, "run", "main.py",
-        "--platform", code,
-        "--lt", login_type,
-        "--type", "search",
-        "--keywords", keyword,
-        "--save_data_option", "json",
-        "--save_data_path", str(out_dir),
+        "--platform", code, "--lt", login_type, "--type", "search",
+        "--keywords", keywords_csv,
+        "--save_data_option", "json", "--save_data_path", str(out_dir),
         "--crawler_max_notes_count", str(max_count),
         "--get_comment", "true" if get_comment else "false",
         "--get_sub_comment", "false",
@@ -268,13 +267,11 @@ async def search(
                 hint = f"（{platform_id} 可能未登录：每个平台需先单独扫码登录一次，见 README「登录」一节）"
             elif "err_connection_reset" in low or "connecterror" in low or "net::err" in low:
                 hint = f"（{platform_id} 连接被重置/不通：可能被平台风控，或需配置代理）"
-            tail = out[-500:]
             return ToolResult(title="搜索失败", output="",
-                              error=f"MediaCrawler 退出码 {proc.returncode} {hint}: ...{tail}")
+                              error=f"MediaCrawler 退出码 {proc.returncode} {hint}: ...{out[-500:]}")
 
-        records = _read_contents(code, out_dir)
         posts: List[Dict[str, Any]] = []
-        for rec in records:
+        for rec in _read_contents(code, out_dir):
             p = _map_post(code, rec)
             if p:
                 posts.append(p)
@@ -282,9 +279,9 @@ async def search(
             _attach_comments(code, posts, out_dir)
 
         return ToolResult(
-            title=f"搜索: {keyword} ({platform_id})",
+            title=f"搜索: {keywords_csv} ({platform_id})",
             output=json.dumps({"data_count": len(posts)}, ensure_ascii=False),
-            long_term_memory=f"MediaCrawler searched '{keyword}' on {platform_id}, {len(posts)} results.",
+            long_term_memory=f"MediaCrawler searched '{keywords_csv}' on {platform_id}, {len(posts)} results.",
             metadata={"posts": posts},
         )
     except subprocess.TimeoutExpired:
@@ -294,6 +291,26 @@ async def search(
         return ToolResult(title="搜索失败", output="", error=f"{type(e).__name__}: {e}")
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
+
+
+async def search(
+    platform_id: str, keyword: str, max_count: int = 20,
+    cursor: str = "", extras: Optional[Dict[str, Any]] = None,
+) -> ToolResult:
+    """单关键词搜索（与 aigc_channel.search 同构）。"""
+    return await _crawl(platform_id, keyword, max_count)
+
+
+async def search_batch(
+    platform_id: str, keywords: List[str], max_count: int = 20,
+    extras: Optional[Dict[str, Any]] = None,
+) -> ToolResult:
+    """批量搜索：多个关键词合并成一次 MediaCrawler 调用（只开一次浏览器）。
+
+    返回 metadata.posts，每条带 source_keyword；调用方（search_all）据此归因到具体关键词。
+    """
+    csv = ",".join(dict.fromkeys(k.strip() for k in keywords if k.strip()))  # 去重保序
+    return await _crawl(platform_id, csv, max_count)
 
 
 # ── 平台注册 ──
@@ -312,6 +329,7 @@ _MC_PLATFORMS = [
 def _register_all():
     for p in _MC_PLATFORMS:
         p.search_impl = search
+        p.search_batch_impl = search_batch   # 启用批量路径（见 pipeline/search.py）
         register_platform(p)
 
 

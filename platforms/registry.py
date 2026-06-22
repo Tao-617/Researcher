@@ -49,6 +49,7 @@ class PlatformDef:
 
     # 平台实现函数（运行时由 platforms/ 模块设置）
     search_impl: Optional[SearchFunc] = None
+    search_batch_impl: Optional[SearchFunc] = None  # 可选：多关键词一次性搜索（减少浏览器启动）
     detail_impl: Optional[DetailFunc] = None
     suggest_impl: Optional[SuggestFunc] = None
 

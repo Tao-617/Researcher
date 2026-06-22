@@ -4,7 +4,7 @@ platforms: [xhs]              # 采哪些平台，逗号在 CLI 用 --platforms 
 max_count_per_query: 20       # 每个 (平台,关键词) 返回上限
 
 expand_query: true            # 是否用 LLM 把 prompt 扩展成多关键词
-expand_count: 8
+expand_count: 5               # 扩展词数；越多越全但越慢（每词都要爬一遍），demo 建议 ≤5
 
 eval_model: gemini-flash-lite # 评估/排序模型（见 llm/providers.py MODELS）
 eval_concurrent: 3            # LLM 评分并发（Gemini 端高并发会掐连接，建议 ≤3）
