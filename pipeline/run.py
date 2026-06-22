@@ -89,6 +89,16 @@ async def run_pipeline(
     total_cost += c
     n_after_dedup = len(kept)
 
+    # 4.5 视频字幕转写（可选）：只转活下来的候选，把字幕拼进 body_text，供评分/多模态使用
+    if config.get("transcribe_video", False):
+        from pipeline.transcription import enrich_with_transcripts
+        n_tr = await enrich_with_transcripts(
+            kept,
+            concurrency=int(config.get("transcribe_concurrent", 2)),
+            max_videos=int(config.get("transcribe_max", 15)),
+        )
+        print(f"🎬 视频字幕转写：{n_tr} 条")
+
     # 5. 评分 + 加权排序 + LLM 精排 → Top N（评分并发偏小：Gemini 端在高并发下会掐连接）
     top, c = await rank_top(kept, requirement, llm_call, model_id, weights, top_n,
                             max_concurrent=int(config.get("eval_concurrent", 3)),

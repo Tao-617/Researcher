@@ -159,7 +159,8 @@ def _map_post(code: str, rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "publish_time": rec.get(fm["time"]) if fm["time"] else None,
         "images": images,
         "videos": videos,
-        "content_type": "video" if videos else "图文",
+        # bili/快手/抖音 恒为视频；其它平台有视频直链才算视频（搜索结果里 bili 无直链但 link 是视频页）
+        "content_type": "video" if (videos or code in {"bili", "ks", "dy"}) else "图文",
         "author_comments": [],          # 评论稍后按 id 回填
         "source_keyword": rec.get("source_keyword"),  # 命中它的关键词（批量搜索时用于归因）
         "_raw": rec,                    # 保留原始记录，便于排查
